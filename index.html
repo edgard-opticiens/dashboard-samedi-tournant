@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tableau de bord — Samedis tournants</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--g:#C9A84C;--dk:#1A1A1A;--md:#666;--lt:#F9F7F2;--bd:#E0DCD0;--green:#27AE60;--orange:#E67E22;--red:#C0392B;--blue:#2980B9}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:#F2EFE8;min-height:100vh;padding:20px 14px 50px;color:var(--dk)}
+.hdr{max-width:1100px;margin:0 auto 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+.hdr h1{font-family:'Playfair Display',serif;font-size:22px;color:var(--dk)}
+.hdr .sub{font-size:12px;color:var(--md);margin-top:2px}
+.refresh{background:var(--dk);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
+.refresh:hover{background:#333}
+.years{max-width:1100px;margin:0 auto 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.year-tile{background:#fff;border-radius:8px;padding:12px 16px;border-left:4px solid var(--g);cursor:pointer;transition:box-shadow .15s}
+.year-tile:hover{box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.year-tile.active{border-left-color:var(--dk);background:var(--lt)}
+.year-tile .n{font-family:'Playfair Display',serif;font-size:26px;font-weight:700}
+.year-tile .l{font-size:10.5px;color:var(--md);text-transform:uppercase;letter-spacing:.5px}
+.stats{max-width:1100px;margin:0 auto 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.stat{background:#fff;border-radius:8px;padding:12px 16px;border-left:4px solid var(--blue)}
+.stat .n{font-family:'Playfair Display',serif;font-size:26px;font-weight:700}
+.stat .l{font-size:10.5px;color:var(--md);text-transform:uppercase;letter-spacing:.5px}
+.filters{max-width:1100px;margin:0 auto 16px;display:flex;gap:10px;flex-wrap:wrap}
+.filters select,.filters input{border:1.5px solid var(--bd);border-radius:6px;padding:7px 12px;font-size:12px;font-family:'DM Sans',sans-serif;background:#fff}
+table{max-width:1100px;margin:0 auto;width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.07)}
+th{background:var(--dk);color:#fff;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;padding:11px 12px;text-align:left;cursor:pointer;user-select:none}
+th:hover{background:#333}
+td{padding:11px 12px;font-size:12.5px;border-bottom:1px solid var(--bd)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--lt)}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10.5px;font-weight:700;background:#F1EAD6;color:var(--dk)}
+.empty{max-width:1100px;margin:40px auto;text-align:center;color:var(--md);font-size:13px}
+.foot{max-width:1100px;margin:14px auto 0;font-size:11px;color:var(--md)}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div>
+    <h1>Samedis tournants — suivi annuel</h1>
+    <div class="sub" id="lastUpdate">Chargement...</div>
+  </div>
+  <button class="refresh" onclick="load()">↻ Actualiser</button>
+</div>
+
+<div class="years" id="years"></div>
+
+<div class="stats" id="stats"></div>
+
+<div class="filters">
+  <select id="fAnnee" onchange="onYearFilter()"><option value="">Toutes années</option></select>
+  <select id="fSoc" onchange="render()"><option value="">Toutes sociétés</option></select>
+  <input type="text" id="fSearch" placeholder="Rechercher un collaborateur..." oninput="render()">
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th onclick="sortBy('annee')">Année</th>
+      <th onclick="sortBy('societe')">Société</th>
+      <th onclick="sortBy('collaborateur')">Collaborateur</th>
+      <th onclick="sortBy('n')">Samedis pris</th>
+      <th onclick="sortBy('dernier')">Dernier samedi</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+<div class="empty" id="empty" style="display:none">Aucun samedi tournant validé trouvé.</div>
+<div class="foot" id="foot"></div>
+
+<script>
+// URL du webhook n8n "get-samedis-tournant" (workflow "Dashboard - lecture samedis tournants")
+var N8N_URL = 'https://edgard-opticiens.app.n8n.cloud/webhook/get-samedis-tournant';
+
+var DATA = [];       // lignes brutes issues d'Excel
+var AGG = [];        // agrege par annee + societe + collaborateur, statut = valide uniquement
+var YEAR = '';        // annee selectionnee (tuile), '' = toutes
+var SORT = {key:'annee', dir:-1};
+
+function excelOrIsoDate(v){
+  if(v===''||v===null||v===undefined)return null;
+  if(typeof v==='number'||/^\d+(\.\d+)?$/.test(v)){
+    return new Date((Number(v)-25569)*86400000);
+  }
+  var d=new Date(v);
+  return isNaN(d)?null:d;
+}
+function fmtDate(v){
+  var d=excelOrIsoDate(v);
+  if(!d)return '-';
+  return d.toLocaleDateString('fr-FR');
+}
+function yearOf(v){
+  var d=excelOrIsoDate(v);
+  return d?d.getFullYear():null;
+}
+
+function aggregate(){
+  var map={};
+  DATA.filter(function(d){return d.statut==='valide';}).forEach(function(d){
+    var y=yearOf(d.date_samedi);
+    if(!y)return;
+    var key=y+'|'+(d.societe||'')+'|'+(d.nom||'')+'|'+(d.prenom||'');
+    if(!map[key]){
+      map[key]={annee:y,societe:d.societe||'-',collaborateur:(d.prenom||'')+' '+(d.nom||''),n:0,dernier:null};
+    }
+    map[key].n+=1;
+    var ds=excelOrIsoDate(d.date_samedi);
+    if(ds&&(!map[key].dernier||ds>map[key].dernier))map[key].dernier=ds;
+  });
+  return Object.values(map);
+}
+
+function populateSelectors(){
+  var years=[...new Set(AGG.map(function(a){return a.annee;}))].sort(function(a,b){return b-a;});
+  var selY=document.getElementById('fAnnee');
+  var curY=selY.value;
+  selY.innerHTML='<option value="">Toutes années</option>'+years.map(function(y){return '<option value="'+y+'">'+y+'</option>';}).join('');
+  selY.value=curY;
+
+  var socs=[...new Set(AGG.map(function(a){return a.societe;}).filter(Boolean))].sort();
+  var selS=document.getElementById('fSoc');
+  var curS=selS.value;
+  selS.innerHTML='<option value="">Toutes sociétés</option>'+socs.map(function(s){return '<option value="'+s+'">'+s+'</option>';}).join('');
+  selS.value=curS;
+
+  var yearsBox=document.getElementById('years');
+  yearsBox.innerHTML=years.map(function(y){
+    var total=AGG.filter(function(a){return a.annee===y;}).reduce(function(s,a){return s+a.n;},0);
+    return '<div class="year-tile'+(String(YEAR)===String(y)?' active':'')+'" onclick="pickYear('+y+')">'+
+      '<div class="n">'+total+'</div><div class="l">Samedis pris en '+y+'</div></div>';
+  }).join('');
+}
+
+function pickYear(y){
+  YEAR=(String(YEAR)===String(y))?'':y;
+  document.getElementById('fAnnee').value=YEAR;
+  render();
+}
+function onYearFilter(){
+  YEAR=document.getElementById('fAnnee').value;
+  render();
+}
+
+function sortBy(key){
+  if(SORT.key===key)SORT.dir*=-1; else {SORT.key=key;SORT.dir=1;}
+  render();
+}
+
+function render(){
+  populateSelectors();
+  var soc=document.getElementById('fSoc').value;
+  var search=document.getElementById('fSearch').value.toLowerCase();
+
+  var filtered=AGG.filter(function(a){
+    if(YEAR&&String(a.annee)!==String(YEAR))return false;
+    if(soc&&a.societe!==soc)return false;
+    if(search&&!a.collaborateur.toLowerCase().includes(search))return false;
+    return true;
+  });
+
+  var totalPris=filtered.reduce(function(s,a){return s+a.n;},0);
+  var nbCollab=filtered.length;
+  var nbSoc=new Set(filtered.map(function(a){return a.societe;})).size;
+  document.getElementById('stats').innerHTML=
+    '<div class="stat" style="border-color:#C9A84C"><div class="n">'+totalPris+'</div><div class="l">Samedis pris (sélection)</div></div>'+
+    '<div class="stat" style="border-color:#2980B9"><div class="n">'+nbCollab+'</div><div class="l">Collaborateurs concernés</div></div>'+
+    '<div class="stat" style="border-color:#27AE60"><div class="n">'+nbSoc+'</div><div class="l">Magasins concernés</div></div>';
+
+  filtered.sort(function(a,b){
+    var k=SORT.key,dir=SORT.dir;
+    var va=a[k],vb=b[k];
+    if(k==='dernier'){va=va?va.getTime():0;vb=vb?vb.getTime():0;}
+    if(typeof va==='string')va=va.toLowerCase();
+    if(typeof vb==='string')vb=vb.toLowerCase();
+    return va<vb?-1*dir:va>vb?1*dir:0;
+  });
+
+  var tbody=document.getElementById('rows');
+  if(!filtered.length){
+    tbody.innerHTML='';
+    document.getElementById('empty').style.display='block';
+    document.getElementById('foot').textContent='';
+    return;
+  }
+  document.getElementById('empty').style.display='none';
+  document.getElementById('foot').textContent=filtered.length+' ligne(s) — seules les demandes au statut "Validé" sont comptabilisées.';
+
+  tbody.innerHTML=filtered.map(function(a){
+    return '<tr>'+
+      '<td><span class="badge">'+a.annee+'</span></td>'+
+      '<td>'+a.societe+'</td>'+
+      '<td><strong>'+a.collaborateur+'</strong></td>'+
+      '<td>'+a.n+'</td>'+
+      '<td>'+(a.dernier?a.dernier.toLocaleDateString('fr-FR'):'-')+'</td>'+
+    '</tr>';
+  }).join('');
+}
+
+function load(){
+  document.getElementById('lastUpdate').textContent='Chargement...';
+  fetch(N8N_URL)
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var raw=Array.isArray(data)?data:(data.data||[]);
+      DATA=raw;
+      AGG=aggregate();
+      document.getElementById('lastUpdate').textContent='Mis à jour le '+new Date().toLocaleString('fr-FR')+' ('+raw.length+' demande(s) au total)';
+      render();
+    })
+    .catch(function(e){
+      document.getElementById('lastUpdate').textContent='Erreur de chargement — vérifiez l\'URL n8n';
+      console.error(e);
+    });
+}
+
+load();
+setInterval(function(){ if(!document.hidden) load(); }, 300000); // auto-refresh 5 min
+document.addEventListener('visibilitychange',function(){ if(!document.hidden) load(); });
+</script>
+</body>
+</html>
