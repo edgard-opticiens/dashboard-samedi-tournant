@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Espace directeur — Samedis tournants</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--g:#C9A84C;--dk:#1A1A1A;--md:#666;--lt:#F9F7F2;--bd:#E0DCD0;--green:#27AE60;--orange:#E67E22;--red:#C0392B;--blue:#2980B9}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:#F2EFE8;min-height:100vh;padding:20px 14px 50px;color:var(--dk)}
+.hdr{max-width:1100px;margin:0 auto 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+.hdr h1{font-family:'Playfair Display',serif;font-size:22px;color:var(--dk)}
+.hdr .sub{font-size:12px;color:var(--md);margin-top:2px}
+.refresh{background:var(--dk);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
+.refresh:hover{background:#333}
+
+#gate{position:fixed;inset:0;background:#F2EFE8;z-index:50;display:flex;align-items:center;justify-content:center;padding:20px}
+.gate-box{background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.12);max-width:360px;width:100%;padding:30px 26px;text-align:center}
+.gate-box h2{font-family:'Playfair Display',serif;font-size:19px;margin-bottom:4px}
+.gate-box p{font-size:12.5px;color:#666;margin-bottom:18px}
+.gate-box select,.gate-box input{width:100%;padding:10px;border:1.5px solid var(--bd);border-radius:6px;margin-bottom:10px;font-size:13px;font-family:'DM Sans',sans-serif}
+.gate-box input{text-align:center;letter-spacing:.2em;font-size:15px}
+.gate-box button{width:100%;padding:11px;background:var(--dk);color:#fff;border:none;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer}
+#gateErr{color:var(--red);font-size:12px;margin-top:10px;min-height:16px}
+
+#app{display:none}
+.years{max-width:1100px;margin:0 auto 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.year-tile{background:#fff;border-radius:8px;padding:12px 16px;border-left:4px solid var(--g);cursor:pointer;transition:box-shadow .15s}
+.year-tile:hover{box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.year-tile.active{border-left-color:var(--dk);background:var(--lt)}
+.year-tile .n{font-family:'Playfair Display',serif;font-size:26px;font-weight:700}
+.year-tile .l{font-size:10.5px;color:var(--md);text-transform:uppercase;letter-spacing:.5px}
+.stats{max-width:1100px;margin:0 auto 18px;display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.stat{background:#fff;border-radius:8px;padding:12px 16px;border-left:4px solid var(--blue)}
+.stat .n{font-family:'Playfair Display',serif;font-size:26px;font-weight:700}
+.stat .l{font-size:10.5px;color:var(--md);text-transform:uppercase;letter-spacing:.5px}
+.filters{max-width:1100px;margin:0 auto 16px;display:flex;gap:10px;flex-wrap:wrap}
+.filters input{border:1.5px solid var(--bd);border-radius:6px;padding:7px 12px;font-size:12px;font-family:'DM Sans',sans-serif;background:#fff}
+table{max-width:1100px;margin:0 auto;width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.07)}
+th{background:var(--dk);color:#fff;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;padding:11px 12px;text-align:left;cursor:pointer;user-select:none}
+th:hover{background:#333}
+td{padding:11px 12px;font-size:12.5px;border-bottom:1px solid var(--bd);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--lt)}
+.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:10.5px;font-weight:700}
+.b-actif{background:#E8F4E8;color:var(--green)}
+.b-sorti{background:#F1EAD6;color:var(--dk)}
+.b-nouveau{background:#FFF3CD;color:#856404}
+.presence{font-size:11.5px;color:var(--md)}
+.empty{max-width:1100px;margin:40px auto;text-align:center;color:var(--md);font-size:13px}
+.foot{max-width:1100px;margin:14px auto 0;font-size:11px;color:var(--md);line-height:1.6}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-box">
+    <h2>Espace directeur</h2>
+    <p>Sélectionnez votre magasin et saisissez votre code directeur</p>
+    <select id="gateSoc"><option value="">— Choisir un magasin —</option></select>
+    <input type="password" id="gatePin" placeholder="Code directeur" maxlength="6">
+    <button type="button" onclick="tryGate()">Accéder</button>
+    <div id="gateErr"></div>
+  </div>
+</div>
+
+<div id="app">
+
+<div class="hdr">
+  <div>
+    <h1>Samedis tournants — <span id="dirMagasin"></span></h1>
+    <div class="sub" id="lastUpdate">Chargement...</div>
+  </div>
+  <button class="refresh" onclick="load()">↻ Actualiser</button>
+</div>
+
+<div class="years" id="years"></div>
+<div class="stats" id="stats"></div>
+
+<div class="filters">
+  <input type="text" id="fSearch" placeholder="Rechercher un collaborateur..." oninput="render()">
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th onclick="sortBy('collaborateur')">Collaborateur</th>
+      <th onclick="sortBy('presenceLabel')">Présence en <span id="thYear"></span></th>
+      <th onclick="sortBy('n')">Samedis pris</th>
+      <th onclick="sortBy('taux')">Taux annualisé</th>
+    </tr>
+  </thead>
+  <tbody id="rows"></tbody>
+</table>
+<div class="empty" id="empty" style="display:none">Aucun collaborateur trouvé pour cette année.</div>
+<div class="foot" id="foot"></div>
+
+</div>
+
+<script>
+/* ============================ CONFIG ============================ */
+var N8N_SAMEDIS = 'https://edgard-opticiens.app.n8n.cloud/webhook/get-samedis-tournant';
+var N8N_EFFECTIF = 'https://edgard-opticiens.app.n8n.cloud/webhook/get-effectif';
+
+// Memes codes que l'Espace directeur du portail Edgard (magasins Edgard uniquement — le samedi tournant ne concerne pas GdO)
+var CODES_DIRECTEUR = {
+  "ANGO":"vv2ex3","BIARRO":"t5xaaa","BORDO":"ykubz3","CAENPO":"3cv3y9","GIRO":"yampws",
+  "HAVRO":"x663ra","JISAM":"8522mv","LYONO":"dtqhpr","MANSO":"2ar48z","MARSEILLO":"e8smvp",
+  "NANCEO":"253ruj","NANTO":"jy8bb8","NICEO":"s6w62v","ORLO":"8ty2t3","REIMO":"9demwu",
+  "STRABO":"z4jx7z","TURO":"c33acr"
+};
+
+function normSoc(s){ return (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z]/g,'').toUpperCase(); }
+function normNom(s){ return (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z]/g,'').toUpperCase(); }
+function cle(nom,prenom){ return normNom(nom)+'|'+normNom(prenom); }
+
+var LOCKED_SOCIETE = null;
+
+function initGate(){
+  var sel = document.getElementById('gateSoc');
+  Object.keys(CODES_DIRECTEUR).sort().forEach(function(code){
+    var o = document.createElement('option');
+    o.value = code; o.textContent = code;
+    sel.appendChild(o);
+  });
+}
+function tryGate(){
+  var soc = document.getElementById('gateSoc').value;
+  var pin = document.getElementById('gatePin').value.trim();
+  var err = document.getElementById('gateErr');
+  if(!soc){ err.textContent = 'Choisissez votre magasin.'; return; }
+  if(!CODES_DIRECTEUR[soc] || CODES_DIRECTEUR[soc] !== pin){
+    err.textContent = 'Code incorrect.'; document.getElementById('gatePin').value=''; return;
+  }
+  LOCKED_SOCIETE = soc;
+  document.getElementById('dirMagasin').textContent = soc;
+  document.getElementById('gate').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  load();
+  setInterval(load, 300000);
+}
+document.getElementById('gatePin').addEventListener('keydown', function(e){ if(e.key==='Enter') tryGate(); });
+
+/* ============================ DONNEES ============================ */
+var SAMEDIS = [];    // demandes validees, ce magasin
+var EFFECTIF = [];   // effectif (actifs + sortis), ce magasin
+var YEAR = new Date().getFullYear();
+var SORT = {key:'collaborateur', dir:1};
+
+function excelOrIsoDate(v){
+  if(v===''||v===null||v===undefined)return null;
+  if(typeof v==='number'||/^\d+(\.\d+)?$/.test(v)){
+    return new Date((Number(v)-25569)*86400000);
+  }
+  var d=new Date(v);
+  return isNaN(d)?null:d;
+}
+function isLeap(y){ return (y%4===0 && y%100!==0) || y%400===0; }
+function daysInYear(y){ return isLeap(y)?366:365; }
+function fmtD(d){ return d ? d.toLocaleDateString('fr-FR') : '-'; }
+
+function buildYearRows(year){
+  var jan1 = new Date(year,0,1), dec31 = new Date(year,11,31);
+  var rows = [];
+
+  // Roster present at some point during the year
+  var effectifAnnee = EFFECTIF.filter(function(e){
+    var de = e.dateEntree ? new Date(e.dateEntree) : null;
+    var ds = e.dateSortie ? new Date(e.dateSortie) : null;
+    if(!de) return false;
+    if(de > dec31) return false;           // entre apres cette annee
+    if(ds && ds < jan1) return false;      // sorti avant cette annee
+    return true;
+  });
+
+  var samedisAnnee = SAMEDIS.filter(function(s){
+    var d = excelOrIsoDate(s.date_samedi);
+    return d && d.getFullYear()===year;
+  });
+
+  effectifAnnee.forEach(function(e){
+    var de = new Date(e.dateEntree);
+    var ds = e.dateSortie ? new Date(e.dateSortie) : null;
+    var start = de > jan1 ? de : jan1;
+    var end = (ds && ds < dec31) ? ds : dec31;
+    var joursPresence = Math.max(0, Math.round((end - start)/86400000) + 1);
+    var ratio = joursPresence / daysInYear(year);
+
+    var k = cle(e.nom, e.prenom);
+    var n = samedisAnnee.filter(function(s){ return cle(s.nom, s.prenom)===k; }).length;
+    var taux = ratio > 0 ? (n / ratio) : null;
+
+    var presenceLabel;
+    if(de <= jan1 && (!ds || ds >= dec31)){
+      presenceLabel = 'Toute l\'année';
+    } else {
+      var bits = [];
+      if(de > jan1) bits.push('depuis le '+fmtD(de));
+      if(ds && ds <= dec31) bits.push('jusqu\'au '+fmtD(ds));
+      presenceLabel = bits.join(', ');
+    }
+
+    rows.push({
+      collaborateur: (e.prenom||'')+' '+(e.nom||''),
+      cle:k, presenceLabel:presenceLabel, n:n, taux:taux,
+      actif:e.actif, joursPresence:joursPresence
+    });
+  });
+
+  // Demandes de collaborateurs introuvables dans l'effectif (garde-fou)
+  var clesConnues = {}; rows.forEach(function(r){ clesConnues[r.cle]=true; });
+  var orphelins = {};
+  samedisAnnee.forEach(function(s){
+    var k = cle(s.nom, s.prenom);
+    if(clesConnues[k]) return;
+    orphelins[k] = orphelins[k] || {collaborateur:(s.prenom||'')+' '+(s.nom||''), cle:k, n:0};
+    orphelins[k].n += 1;
+  });
+  Object.values(orphelins).forEach(function(o){
+    rows.push({collaborateur:o.collaborateur, cle:o.cle, presenceLabel:'Non trouvé dans l\'effectif', n:o.n, taux:null, actif:null, joursPresence:null});
+  });
+
+  return rows;
+}
+
+function populateYears(){
+  var years = new Set();
+  years.add(new Date().getFullYear());
+  SAMEDIS.forEach(function(s){ var d=excelOrIsoDate(s.date_samedi); if(d) years.add(d.getFullYear()); });
+  EFFECTIF.forEach(function(e){
+    if(e.dateEntree) years.add(new Date(e.dateEntree).getFullYear());
+    if(e.dateSortie) years.add(new Date(e.dateSortie).getFullYear());
+  });
+  var sorted = Array.from(years).sort(function(a,b){return b-a;});
+  var box = document.getElementById('years');
+  box.innerHTML = sorted.map(function(y){
+    var total = buildYearRows(y).reduce(function(s,r){return s+r.n;},0);
+    return '<div class="year-tile'+(y===YEAR?' active':'')+'" onclick="pickYear('+y+')">'+
+      '<div class="n">'+total+'</div><div class="l">Samedis pris en '+y+'</div></div>';
+  }).join('');
+}
+function pickYear(y){ YEAR=y; render(); }
+
+function sortBy(key){
+  if(SORT.key===key) SORT.dir*=-1; else { SORT.key=key; SORT.dir=1; }
+  render();
+}
+
+function render(){
+  populateYears();
+  document.getElementById('thYear').textContent = YEAR;
+  var search = document.getElementById('fSearch').value.toLowerCase();
+  var rows = buildYearRows(YEAR).filter(function(r){
+    return !search || r.collaborateur.toLowerCase().includes(search);
+  });
+
+  var totalPris = rows.reduce(function(s,r){return s+r.n;},0);
+  var nbCollab = rows.length;
+  var moyenne = nbCollab ? (totalPris/nbCollab) : 0;
+  document.getElementById('stats').innerHTML =
+    '<div class="stat" style="border-color:#C9A84C"><div class="n">'+totalPris+'</div><div class="l">Samedis pris en '+YEAR+'</div></div>'+
+    '<div class="stat" style="border-color:#2980B9"><div class="n">'+nbCollab+'</div><div class="l">Collaborateurs (effectif '+YEAR+')</div></div>'+
+    '<div class="stat" style="border-color:#27AE60"><div class="n">'+moyenne.toFixed(1)+'</div><div class="l">Moyenne par collaborateur</div></div>';
+
+  rows.sort(function(a,b){
+    var k=SORT.key, dir=SORT.dir;
+    var va=a[k], vb=b[k];
+    if(va===null||va===undefined) va = (k==='taux'||k==='n') ? -1 : '';
+    if(vb===null||vb===undefined) vb = (k==='taux'||k==='n') ? -1 : '';
+    if(typeof va==='string') va=va.toLowerCase();
+    if(typeof vb==='string') vb=vb.toLowerCase();
+    return va<vb?-1*dir:va>vb?1*dir:0;
+  });
+
+  var tbody = document.getElementById('rows');
+  if(!rows.length){
+    tbody.innerHTML='';
+    document.getElementById('empty').style.display='block';
+    document.getElementById('foot').textContent='';
+    return;
+  }
+  document.getElementById('empty').style.display='none';
+  document.getElementById('foot').innerHTML = rows.length+' collaborateur(s) présent(s) au moins un jour en '+YEAR+
+    ' dans ce magasin. Le <b>taux annualisé</b> ramène le nombre de samedis pris à une année complète de présence '+
+    '(entrées/sorties en cours d\'année prises en compte), pour comparer équitablement des collaborateurs présents des durées différentes.';
+
+  tbody.innerHTML = rows.map(function(r){
+    var statutBadge = r.actif===true ? '<span class="badge b-actif">Actif</span>'
+      : r.actif===false ? '<span class="badge b-sorti">Sorti</span>'
+      : '<span class="badge b-nouveau">?</span>';
+    return '<tr>'+
+      '<td><strong>'+r.collaborateur+'</strong> '+statutBadge+'</td>'+
+      '<td class="presence">'+r.presenceLabel+'</td>'+
+      '<td>'+r.n+'</td>'+
+      '<td>'+(r.taux===null?'-':r.taux.toFixed(1)+' /an')+'</td>'+
+    '</tr>';
+  }).join('');
+}
+
+function load(){
+  document.getElementById('lastUpdate').textContent='Chargement...';
+  Promise.all([
+    fetch(N8N_SAMEDIS).then(function(r){return r.json();}).catch(function(){return {data:[]};}),
+    fetch(N8N_EFFECTIF).then(function(r){return r.json();}).catch(function(){return {data:[]};})
+  ]).then(function(results){
+    var rawSamedis = Array.isArray(results[0]) ? results[0] : (results[0].data||[]);
+    var rawEffectif = Array.isArray(results[1]) ? results[1] : (results[1].data||[]);
+    SAMEDIS = rawSamedis.filter(function(s){
+      return s.statut==='valide' && normSoc(s.societe)===LOCKED_SOCIETE;
+    });
+    EFFECTIF = rawEffectif.filter(function(e){
+      return normSoc(e.societe)===LOCKED_SOCIETE;
+    });
+    document.getElementById('lastUpdate').textContent='Mis à jour le '+new Date().toLocaleString('fr-FR');
+    render();
+  }).catch(function(e){
+    document.getElementById('lastUpdate').textContent='Erreur de chargement — réessayez plus tard';
+    console.error(e);
+  });
+}
+
+initGate();
+</script>
+</body>
+</html>
