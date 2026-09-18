@@ -225,22 +225,13 @@ function buildYearRows(year){
 }
 
 function populateYears(){
-  var years = new Set();
-  years.add(new Date().getFullYear());
-  SAMEDIS.forEach(function(s){ var d=excelOrIsoDate(s.date_samedi); if(d) years.add(d.getFullYear()); });
-  EFFECTIF.forEach(function(e){
-    if(e.dateEntree) years.add(new Date(e.dateEntree).getFullYear());
-    if(e.dateSortie) years.add(new Date(e.dateSortie).getFullYear());
-  });
-  var sorted = Array.from(years).sort(function(a,b){return b-a;});
+  // Toujours verrouillé sur l'année civile en cours (bascule automatiquement au 1er janvier)
+  YEAR = new Date().getFullYear();
+  var total = buildYearRows(YEAR).reduce(function(s,r){return s+r.n;},0);
   var box = document.getElementById('years');
-  box.innerHTML = sorted.map(function(y){
-    var total = buildYearRows(y).reduce(function(s,r){return s+r.n;},0);
-    return '<div class="year-tile'+(y===YEAR?' active':'')+'" onclick="pickYear('+y+')">'+
-      '<div class="n">'+total+'</div><div class="l">Samedis pris en '+y+'</div></div>';
-  }).join('');
+  box.innerHTML = '<div class="year-tile active" style="cursor:default">'+
+    '<div class="n">'+total+'</div><div class="l">Samedis pris en '+YEAR+'</div></div>';
 }
-function pickYear(y){ YEAR=y; render(); }
 
 function sortBy(key){
   if(SORT.key===key) SORT.dir*=-1; else { SORT.key=key; SORT.dir=1; }
