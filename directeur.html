@@ -350,9 +350,11 @@ function render(){
   }).join('');
 }
 
+var LOAD_PROMISE = null;
+
 function load(){
   document.getElementById('lastUpdate').textContent='Chargement...';
-  Promise.all([
+  LOAD_PROMISE = Promise.all([
     fetch(N8N_SAMEDIS).then(function(r){return r.json();}).catch(function(){return {data:[]};}),
     fetch(N8N_EFFECTIF).then(function(r){return r.json();}).catch(function(){return {data:[]};})
   ]).then(function(results){
@@ -370,6 +372,7 @@ function load(){
     document.getElementById('lastUpdate').textContent='Erreur de chargement — réessayez plus tard';
     console.error(e);
   });
+  return LOAD_PROMISE;
 }
 
 /* ─── Ajout manuel d'un samedi tournant déjà accordé ───
@@ -389,24 +392,46 @@ function toast(m,ms){
 }
 function populateCollabSelect(){
   var sel=document.getElementById('addCollab');
-  var list=EFFECTIF.slice().sort(function(a,b){
+  // Uniquement les collaborateurs encore sous contrat : un samedi tournant ne se
+  // note pas rétroactivement pour quelqu'un qui a quitté le magasin.
+  var list=EFFECTIF.filter(function(e){ return e.actif===true; }).sort(function(a,b){
     var an=(a.nom||'')+(a.prenom||''), bn=(b.nom||'')+(b.prenom||'');
     return an.localeCompare(bn);
   });
   sel.innerHTML='<option value="">— Choisir —</option>'+list.map(function(e){
     var val=(e.nom||'')+'|'+(e.prenom||'');
-    var label=(e.prenom||'')+' '+(e.nom||'')+(e.actif===false?' (sorti)':'');
+    var label=(e.prenom||'')+' '+(e.nom||'');
     return '<option value="'+val.replace(/"/g,'&quot;')+'">'+label.replace(/</g,'&lt;')+'</option>';
   }).join('');
 }
 function openAddModal(){
   if(!LOCKED_SOCIETE)return;
-  populateCollabSelect();
   document.getElementById('addSamedi').value='';
   document.getElementById('addRepos').value='';
   document.getElementById('addComment').value='';
   var err=document.getElementById('addErr'); err.style.display='none'; err.textContent='';
   document.getElementById('mdlAdd').classList.add('show');
+
+  var sel=document.getElementById('addCollab');
+  var nbActifs=EFFECTIF.filter(function(e){ return e.actif===true; }).length;
+  if(nbActifs){
+    sel.disabled=false;
+    populateCollabSelect();
+    return;
+  }
+  // Le chargement initial (ou un rechargement) est peut-être encore en cours : on attend
+  // plutôt que d'afficher une liste vide, qui donnait l'impression qu'aucun collaborateur
+  // n'existait pour le magasin.
+  sel.disabled=true;
+  sel.innerHTML='<option value="">Chargement des collaborateurs...</option>';
+  (LOAD_PROMISE || load()).then(function(){
+    sel.disabled=false;
+    populateCollabSelect();
+    if(!EFFECTIF.filter(function(e){ return e.actif===true; }).length){
+      err.textContent='Aucun collaborateur actif trouvé pour ce magasin. Cliquez sur "↻ Actualiser" puis réessayez.';
+      err.style.display='block';
+    }
+  });
 }
 function closeAddModal(){ document.getElementById('mdlAdd').classList.remove('show'); }
 document.getElementById('mdlAdd').addEventListener('click',function(e){ if(e.target===this) closeAddModal(); });
