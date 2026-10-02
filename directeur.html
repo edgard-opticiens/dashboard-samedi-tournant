@@ -50,6 +50,31 @@ tr:hover td{background:var(--lt)}
 .presence{font-size:11.5px;color:var(--md)}
 .empty{max-width:1100px;margin:40px auto;text-align:center;color:var(--md);font-size:13px}
 .foot{max-width:1100px;margin:14px auto 0;font-size:11px;color:var(--md);line-height:1.6}
+.hdrBtns{display:flex;gap:10px;flex-wrap:wrap}
+.addBtn{background:var(--g);color:#1A1A1A;border:none;padding:9px 18px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+.addBtn:hover{background:#b8963f}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:60;align-items:center;justify-content:center;padding:20px}
+.modal.show{display:flex}
+.modalBox{background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.2);max-width:420px;width:100%;padding:28px 26px;max-height:90vh;overflow-y:auto}
+.modalBox h2{font-family:'Playfair Display',serif;font-size:19px;margin-bottom:4px}
+.modalBox .sub{font-size:12px;color:var(--md);margin-bottom:18px}
+.formRow{margin-bottom:12px}
+.formRow label{display:block;font-size:11px;font-weight:600;color:var(--md);text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px}
+.formRow input,.formRow select,.formRow textarea{width:100%;padding:9px 11px;border:1.5px solid var(--bd);border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif}
+.formRow textarea{resize:vertical}
+.formRow2{display:flex;gap:10px}
+.formRow2 .formRow{flex:1}
+.modalBtns{display:flex;gap:10px;margin-top:18px}
+.btnCancel{flex:1;background:#fff;border:1.5px solid var(--bd);color:var(--dk);padding:11px;border-radius:6px;font-weight:600;font-size:13px;cursor:pointer}
+.btnSave{flex:1;background:#1A1A1A;color:#fff;border:none;padding:11px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer}
+.btnSave:disabled{opacity:.6;cursor:default}
+.formErr{color:var(--red);font-size:12px;margin-top:4px;display:none}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#1A1A1A;color:#fff;padding:12px 22px;border-radius:8px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:70}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.dates-list{margin-top:4px;display:flex;flex-wrap:wrap}
+.tag-date{display:inline-flex;align-items:center;gap:4px;background:var(--lt);border:1px solid var(--bd);border-radius:12px;padding:2px 8px;margin:2px 4px 2px 0;font-size:11px;white-space:nowrap}
+.tag-date button{border:none;background:none;color:var(--red);cursor:pointer;font-weight:700;padding:0;font-size:12px;line-height:1}
+.tag-date button:hover{color:#861f14}
 </style>
 </head>
 <body>
@@ -72,8 +97,33 @@ tr:hover td{background:var(--lt)}
     <h1>Samedis tournants — <span id="dirMagasin"></span></h1>
     <div class="sub" id="lastUpdate">Chargement...</div>
   </div>
-  <button class="refresh" onclick="load()">↻ Actualiser</button>
+  <div class="hdrBtns">
+    <button class="addBtn" onclick="openAddModal()">+ Noter un samedi tournant</button>
+    <button class="refresh" onclick="load()">↻ Actualiser</button>
+  </div>
 </div>
+
+<div class="modal" id="mdlAdd">
+  <div class="modalBox">
+    <h2>Noter un samedi tournant</h2>
+    <div class="sub">Enregistre directement un échange déjà accordé pour un collaborateur de ce magasin — il apparaît aussitôt dans le tableau ci-dessous.</div>
+    <div class="formRow">
+      <label>Collaborateur</label>
+      <select id="addCollab"><option value="">— Choisir —</option></select>
+    </div>
+    <div class="formRow2">
+      <div class="formRow"><label>Samedi non travaillé</label><input type="date" id="addSamedi"></div>
+      <div class="formRow"><label>Jour de repos échangé (travaillé)</label><input type="date" id="addRepos"></div>
+    </div>
+    <div class="formRow"><label>Commentaire (facultatif)</label><textarea id="addComment" rows="2"></textarea></div>
+    <div class="formErr" id="addErr"></div>
+    <div class="modalBtns">
+      <button class="btnCancel" type="button" onclick="closeAddModal()">Annuler</button>
+      <button class="btnSave" type="button" id="addSaveBtn" onclick="submitManualSamedi()">Enregistrer</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
 
 <div class="years" id="years"></div>
 <div class="stats" id="stats"></div>
@@ -188,7 +238,8 @@ function buildYearRows(year){
     var ratio = joursPresence / daysInYear(year);
 
     var k = cle(e.nom, e.prenom);
-    var n = samedisAnnee.filter(function(s){ return cle(s.nom, s.prenom)===k; }).length;
+    var entries = samedisAnnee.filter(function(s){ return cle(s.nom, s.prenom)===k; });
+    var n = entries.length;
     var taux = ratio > 0 ? (n / ratio) : null;
 
     var presenceLabel;
@@ -204,7 +255,7 @@ function buildYearRows(year){
     rows.push({
       collaborateur: (e.prenom||'')+' '+(e.nom||''),
       cle:k, presenceLabel:presenceLabel, n:n, taux:taux,
-      actif:e.actif, joursPresence:joursPresence
+      actif:e.actif, joursPresence:joursPresence, entries:entries
     });
   });
 
@@ -214,11 +265,12 @@ function buildYearRows(year){
   samedisAnnee.forEach(function(s){
     var k = cle(s.nom, s.prenom);
     if(clesConnues[k]) return;
-    orphelins[k] = orphelins[k] || {collaborateur:(s.prenom||'')+' '+(s.nom||''), cle:k, n:0};
+    orphelins[k] = orphelins[k] || {collaborateur:(s.prenom||'')+' '+(s.nom||''), cle:k, n:0, entries:[]};
     orphelins[k].n += 1;
+    orphelins[k].entries.push(s);
   });
   Object.values(orphelins).forEach(function(o){
-    rows.push({collaborateur:o.collaborateur, cle:o.cle, presenceLabel:'Non trouvé dans l\'effectif', n:o.n, taux:null, actif:null, joursPresence:null});
+    rows.push({collaborateur:o.collaborateur, cle:o.cle, presenceLabel:'Non trouvé dans l\'effectif', n:o.n, taux:null, actif:null, joursPresence:null, entries:o.entries});
   });
 
   return rows;
@@ -280,10 +332,19 @@ function render(){
     var statutBadge = r.actif===true ? '<span class="badge b-actif">Actif</span>'
       : r.actif===false ? '<span class="badge b-sorti">Sorti</span>'
       : '<span class="badge b-nouveau">?</span>';
+    var datesHtml = (r.entries||[]).slice().sort(function(a,b){
+      return (excelOrIsoDate(a.date_samedi)||0) - (excelOrIsoDate(b.date_samedi)||0);
+    }).map(function(s){
+      var label = fmtD(excelOrIsoDate(s.date_samedi));
+      var idEsc = String(s.id).replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      var labelEsc = label.replace(/'/g,"\\'");
+      return '<span class="tag-date">'+label+
+        '<button type="button" onclick="deleteSamedi(\''+idEsc+'\',\''+labelEsc+'\',\''+r.collaborateur.replace(/'/g,"\\'")+'\')" title="Supprimer ce samedi (annulation)">✕</button></span>';
+    }).join('');
     return '<tr>'+
       '<td><strong>'+r.collaborateur+'</strong> '+statutBadge+'</td>'+
       '<td class="presence">'+r.presenceLabel+'</td>'+
-      '<td>'+r.n+'</td>'+
+      '<td>'+r.n+(datesHtml?'<div class="dates-list">'+datesHtml+'</div>':'')+'</td>'+
       '<td>'+(r.taux===null?'-':r.taux.toFixed(1)+' /an')+'</td>'+
     '</tr>';
   }).join('');
@@ -309,6 +370,111 @@ function load(){
     document.getElementById('lastUpdate').textContent='Erreur de chargement — réessayez plus tard';
     console.error(e);
   });
+}
+
+/* ─── Ajout manuel d'un samedi tournant déjà accordé ───
+   Remplace l'ancien circuit de demande en ligne (collaborateur → directeur → RH,
+   avec signature et e-mails) : le directeur note ici directement le samedi non
+   travaillé, et l'enregistrement est envoyé au même webhook que l'ancien outil,
+   déjà au statut "valide", donc compté immédiatement dans le tableau d'équité
+   ci-dessus — sans étape intermédiaire. */
+var N8N_LOG_SAMEDI = 'https://edgard-opticiens.app.n8n.cloud/webhook/log-samedi-tournant';
+var N8N_DELETE_SAMEDI = 'https://edgard-opticiens.app.n8n.cloud/webhook/samedi-tournant-supprimer-manuelle';
+
+function toast(m,ms){
+  var t=document.getElementById('toast');
+  t.textContent=m;t.classList.add('show');
+  clearTimeout(t._h);
+  t._h=setTimeout(function(){t.classList.remove('show')},ms||3500);
+}
+function populateCollabSelect(){
+  var sel=document.getElementById('addCollab');
+  var list=EFFECTIF.slice().sort(function(a,b){
+    var an=(a.nom||'')+(a.prenom||''), bn=(b.nom||'')+(b.prenom||'');
+    return an.localeCompare(bn);
+  });
+  sel.innerHTML='<option value="">— Choisir —</option>'+list.map(function(e){
+    var val=(e.nom||'')+'|'+(e.prenom||'');
+    var label=(e.prenom||'')+' '+(e.nom||'')+(e.actif===false?' (sorti)':'');
+    return '<option value="'+val.replace(/"/g,'&quot;')+'">'+label.replace(/</g,'&lt;')+'</option>';
+  }).join('');
+}
+function openAddModal(){
+  if(!LOCKED_SOCIETE)return;
+  populateCollabSelect();
+  document.getElementById('addSamedi').value='';
+  document.getElementById('addRepos').value='';
+  document.getElementById('addComment').value='';
+  var err=document.getElementById('addErr'); err.style.display='none'; err.textContent='';
+  document.getElementById('mdlAdd').classList.add('show');
+}
+function closeAddModal(){ document.getElementById('mdlAdd').classList.remove('show'); }
+document.getElementById('mdlAdd').addEventListener('click',function(e){ if(e.target===this) closeAddModal(); });
+
+function submitManualSamedi(){
+  var err=document.getElementById('addErr');
+  err.style.display='none'; err.textContent='';
+
+  var collabVal=document.getElementById('addCollab').value;
+  var samedi=document.getElementById('addSamedi').value;
+  var repos=document.getElementById('addRepos').value;
+  var commentaire=document.getElementById('addComment').value.trim();
+
+  if(!collabVal||!samedi){
+    err.textContent='Choisissez le collaborateur et la date du samedi non travaillé.';
+    err.style.display='block';
+    return;
+  }
+  var parts=collabVal.split('|');
+  var nom=parts[0], prenom=parts[1];
+  var id=LOCKED_SOCIETE+'_'+nom+'_'+prenom+'_'+samedi;
+  var exists=SAMEDIS.some(function(s){ return s.id===id; });
+  if(exists && !confirm('Un samedi du '+samedi+' est déjà enregistré pour '+prenom+' '+nom+'. Continuer écrasera cet enregistrement. Continuer ?')){
+    return;
+  }
+
+  var btn=document.getElementById('addSaveBtn');
+  btn.disabled=true; btn.textContent='Enregistrement...';
+
+  var payload={
+    id:id, date_creation:new Date().toISOString(), societe:LOCKED_SOCIETE,
+    nom:nom, prenom:prenom, type:'Samedi tournant',
+    date_samedi:samedi, date_repos:repos, commentaire:commentaire,
+    etape:'termine', statut:'valide',
+    en_attente_nom:'', en_attente_email:'', lien:'', responsable:'', motif_refus:''
+  };
+
+  fetch(N8N_LOG_SAMEDI,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json().catch(function(){return {};}); })
+    .then(function(){
+      closeAddModal();
+      toast('Samedi tournant enregistré ✓');
+      load();
+    })
+    .catch(function(e){
+      console.error(e);
+      err.textContent='Erreur lors de l\'enregistrement — réessayez.';
+      err.style.display='block';
+    })
+    .finally(function(){
+      btn.disabled=false; btn.textContent='Enregistrer';
+    });
+}
+
+/* ─── Suppression d'un samedi tournant (annulation) ─── */
+function deleteSamedi(id, dateLabel, collaborateur){
+  if(!confirm('Supprimer le samedi tournant du '+dateLabel+' pour '+collaborateur+' ?\nCette action est définitive.')) return;
+  fetch(N8N_DELETE_SAMEDI,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+    .then(function(r){ return r.json().catch(function(){return {};}); })
+    .then(function(res){
+      if(res && res.ok===false){ toast('Erreur : '+(res.error||'suppression impossible')); return; }
+      toast('Samedi tournant supprimé ✓');
+      load();
+    })
+    .catch(function(e){
+      console.error(e);
+      toast('Erreur lors de la suppression — réessayez.');
+    });
 }
 
 initGate();
