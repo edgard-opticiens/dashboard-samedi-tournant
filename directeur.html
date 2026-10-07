@@ -151,16 +151,11 @@ tr:hover td{background:var(--lt)}
 
 <script>
 /* ============================ CONFIG ============================ */
-var N8N_SAMEDIS = 'https://edgard-opticiens.app.n8n.cloud/webhook/get-samedis-tournant';
-var N8N_EFFECTIF = 'https://edgard-opticiens.app.n8n.cloud/webhook/get-effectif';
+var N8N_AUTH_LOGIN = 'https://edgard-opticiens.app.n8n.cloud/webhook/auth-login';
+var N8N_AUTH_READ  = 'https://edgard-opticiens.app.n8n.cloud/webhook/secure-read';
 
-// Memes codes que l'Espace directeur du portail Edgard (magasins Edgard uniquement — le samedi tournant ne concerne pas GdO)
-var CODES_DIRECTEUR = {
-  "ANGO":"vv2ex3","BIARRO":"t5xaaa","BORDO":"ykubz3","CAENPO":"3cv3y9","GIRO":"yampws",
-  "HAVRO":"x663ra","JISAM":"8522mv","LYONO":"dtqhpr","MANSO":"2ar48z","MARSEILLO":"e8smvp",
-  "NANCEO":"253ruj","NANTO":"jy8bb8","NICEO":"s6w62v","ORLO":"8ty2t3","REIMO":"9demwu",
-  "STRABO":"z4jx7z","TURO":"c33acr"
-};
+// Magasins Edgard (le samedi tournant ne concerne pas GdO). Les codes ne sont plus dans cette page : ils sont vérifiés par le serveur.
+var MAGASINS = ["ANGO","BIARRO","BORDO","CAENPO","GIRO","HAVRO","JISAM","LYONO","MANSO","MARSEILLO","NANCEO","NANTO","NICEO","ORLO","REIMO","STRABO","TURO"];
 
 function normSoc(s){ return (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z]/g,'').toUpperCase(); }
 function normNom(s){ return (s||'').toString().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-zA-Z]/g,'').toUpperCase(); }
@@ -168,57 +163,78 @@ function cle(nom,prenom){ return normNom(nom)+'|'+normNom(prenom); }
 
 var LOCKED_SOCIETE = null;
 
-/* ===== Session directeur partagée =====
-   Tous les outils sont sur edgard-opticiens.github.io : le navigateur partage donc ce stockage entre le portail
-   et les outils. Le code n'est saisi qu'une fois (valable 30 jours d'inactivité) ; il est revérifié à chaque
-   ouverture, donc un code changé par les RH déconnecte automatiquement. */
-var DIR_SESSION_KEY = 'edgard_dir_session_v1';
-var DIR_SESSION_JOURS = 30;
-function dirHash(s){var h1=0xdeadbeef,h2=0x41c6ce57;for(var i=0,c;i<s.length;i++){c=s.charCodeAt(i);h1=Math.imul(h1^c,2654435761);h2=Math.imul(h2^c,1597334677);}
-  h1=Math.imul(h1^(h1>>>16),2246822507)^Math.imul(h2^(h2>>>13),3266489909);h2=Math.imul(h2^(h2>>>16),2246822507)^Math.imul(h1^(h1>>>13),3266489909);
-  return (4294967296*(2097151&h2)+(h1>>>0)).toString(36);}
-function dirSessionSave(soc,pin){
-  try{localStorage.setItem(DIR_SESSION_KEY,JSON.stringify({soc:String(soc).toUpperCase(),h:dirHash(String(soc).toUpperCase()+':'+pin),t:Date.now()}));}catch(e){}
-}
-function dirSessionClear(){try{localStorage.removeItem(DIR_SESSION_KEY);}catch(e){}}
-/* Renvoie le magasin (clé du tableau de codes de cette page) si une session valide existe, sinon null */
-function dirSessionGet(codes){
+/* ===== Connexion sécurisée =====
+   Le code est vérifié par le serveur (n8n) ; la page ne garde qu'un jeton de session (30 jours) et non le code.
+   Les données ne sont lues qu'avec ce jeton, et le serveur ne renvoie que celles du magasin connecté. */
+var AUTH_KEY = 'edgard_auth_v2';
+function authGet(){
   try{
-    var o=JSON.parse(localStorage.getItem(DIR_SESSION_KEY)||'null');
-    if(!o||!o.soc||!o.h)return null;
-    if(Date.now()-o.t>DIR_SESSION_JOURS*864e5){dirSessionClear();return null;}
-    for(var k in codes){
-      if(Object.prototype.hasOwnProperty.call(codes,k)&&k.toUpperCase()===o.soc){
-        if(codes[k]&&dirHash(o.soc+':'+codes[k])===o.h){
-          o.t=Date.now();try{localStorage.setItem(DIR_SESSION_KEY,JSON.stringify(o));}catch(e){}
-          return k;
-        }
-        dirSessionClear();return null; // code changé par les RH : session invalidée
-      }
-    }
-    return null; // magasin d'une autre enseigne (ex. session GdO sur le portail Edgard) : on la conserve
-  }catch(e){return null;}
+    var o = JSON.parse(localStorage.getItem(AUTH_KEY)||'null');
+    if(!o || !o.token || !o.magasin) return null;
+    if(Number(o.expire) <= Date.now()){ authClear(); return null; }
+    return o;
+  }catch(e){ return null; }
 }
-function dirLogout(){dirSessionClear();location.reload();}
+function authSave(o){ try{ localStorage.setItem(AUTH_KEY, JSON.stringify(o)); }catch(e){} }
+function authClear(){ try{ localStorage.removeItem(AUTH_KEY); }catch(e){} }
+function authPost(url, body){
+  return fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+    .then(function(r){ return r.json().catch(function(){ return {ok:false, error:'reponse'}; }).then(function(j){ j.httpStatus = r.status; return j; }); });
+}
+function authLogin(role, magasin, code){
+  return authPost(N8N_AUTH_LOGIN, {role:role, magasin:magasin, code:code});
+}
+/* Lecture protégée : renvoie le contenu de la source ; si la session n'est plus valide, retour à l'écran de connexion */
+function authRead(source, params){
+  var a = authGet();
+  if(!a) return Promise.reject(new Error('session'));
+  return authPost(N8N_AUTH_READ, {token:a.token, source:source, params:params||{}}).then(function(j){
+    if(j && j.ok) return j.resultat || {};
+    if(j && (j.error==='session' || j.httpStatus===401)){ authClear(); location.reload(); }
+    throw new Error((j && j.error) || 'lecture');
+  });
+}
+function dirLogout(){
+  var a = authGet();
+  authClear();
+  location.reload();
+}
 
 function initGate(){
   var sel = document.getElementById('gateSoc');
-  Object.keys(CODES_DIRECTEUR).sort().forEach(function(code){
+  MAGASINS.slice().sort().forEach(function(code){
     var o = document.createElement('option');
     o.value = code; o.textContent = code;
     sel.appendChild(o);
   });
 }
+var GATE_BUSY = false;
 function tryGate(){
+  if(GATE_BUSY) return;
   var soc = document.getElementById('gateSoc').value;
   var pin = document.getElementById('gatePin').value.trim();
   var err = document.getElementById('gateErr');
   if(!soc){ err.textContent = 'Choisissez votre magasin.'; return; }
-  if(!CODES_DIRECTEUR[soc] || CODES_DIRECTEUR[soc] !== pin){
-    err.textContent = 'Code incorrect.'; document.getElementById('gatePin').value=''; return;
-  }
-  dirSessionSave(soc, pin);
-  entrerDirecteur(soc);
+  if(!pin){ err.textContent = 'Saisissez votre code.'; return; }
+  GATE_BUSY = true; err.textContent = 'Vérification…';
+  authLogin('DIR', soc, pin).then(function(j){
+    GATE_BUSY = false;
+    if(j && j.ok){
+      authSave({token:j.token, role:j.role, magasin:j.magasin, expire:j.expire});
+      err.textContent = '';
+      entrerDirecteur(soc);
+    } else if(j && j.error==='verrouille'){
+      err.textContent = 'Trop d\'essais. Réessayez dans ' + (j.minutes||15) + ' min.';
+      document.getElementById('gatePin').value='';
+    } else if(j && j.error==='incorrect'){
+      err.textContent = 'Code incorrect.'; document.getElementById('gatePin').value='';
+    } else {
+      err.textContent = 'Connexion impossible pour le moment — réessayez.';
+    }
+  }).catch(function(){
+    GATE_BUSY = false;
+    err.textContent = 'Connexion impossible pour le moment — réessayez.';
+  });
 }
 function entrerDirecteur(soc){
   LOCKED_SOCIETE = soc;
@@ -394,8 +410,8 @@ var LOAD_PROMISE = null;
 function load(){
   document.getElementById('lastUpdate').textContent='Chargement...';
   LOAD_PROMISE = Promise.all([
-    fetch(N8N_SAMEDIS).then(function(r){return r.json();}).catch(function(){return {data:[]};}),
-    fetch(N8N_EFFECTIF).then(function(r){return r.json();}).catch(function(){return {data:[]};})
+    authRead('samedis'),
+    authRead('effectif')
   ]).then(function(results){
     var rawSamedis = Array.isArray(results[0]) ? results[0] : (results[0].data||[]);
     var rawEffectif = Array.isArray(results[1]) ? results[1] : (results[1].data||[]);
@@ -507,6 +523,7 @@ function submitManualSamedi(){
     etape:'termine', statut:'valide',
     en_attente_nom:'', en_attente_email:'', lien:'', responsable:'', motif_refus:''
   };
+  var _a = authGet(); if(_a) payload.token = _a.token;
 
   fetch(N8N_LOG_SAMEDI,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
     .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json().catch(function(){return {};}); })
@@ -528,7 +545,7 @@ function submitManualSamedi(){
 /* ─── Suppression d'un samedi tournant (annulation) ─── */
 function deleteSamedi(id, dateLabel, collaborateur){
   if(!confirm('Supprimer le samedi tournant du '+dateLabel+' pour '+collaborateur+' ?\nCette action est définitive.')) return;
-  fetch(N8N_DELETE_SAMEDI,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id})})
+  fetch(N8N_DELETE_SAMEDI,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:id, token:(authGet()||{}).token||''})})
     .then(function(r){ return r.json().catch(function(){return {};}); })
     .then(function(res){
       if(res && res.ok===false){ toast('Erreur : '+(res.error||'suppression impossible')); return; }
@@ -542,7 +559,7 @@ function deleteSamedi(id, dateLabel, collaborateur){
 }
 
 initGate();
-(function(){ var deja = dirSessionGet(CODES_DIRECTEUR); if(deja) entrerDirecteur(deja); })();
+(function(){ var a = authGet(); if(a && a.role==='DIR' && MAGASINS.indexOf(String(a.magasin).toUpperCase())>=0) entrerDirecteur(String(a.magasin).toUpperCase()); })();
 </script>
 </body>
 </html>
